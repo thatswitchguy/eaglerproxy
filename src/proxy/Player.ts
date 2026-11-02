@@ -102,14 +102,29 @@ export class Player extends EventEmitter {
               params: translated[1],
               cancel: false,
             };
+          const isChatPacket = packetData.name === "chat";
+          if (isChatPacket) {
+            const message = (packetData.params as any)?.message;
+            this._logger.debug(
+              `Received chat packet from ${this.username} (${typeof message === "string" ? message.length : "unknown"} characters).`
+            );
+          }
           this.emitVanillaPacket(packetData, "CLIENT");
           if (!packetData.cancel) {
             const connection = this.serverConnection;
             if (connection?.state === states.PLAY) {
               connection.write(packetData.name, packetData.params);
+              if (isChatPacket) this._logger.debug(`Forwarded chat packet from ${this.username} to the backend.`);
             } else {
-              this._logger.debug(`Dropping client packet ${packetData.name} because the server connection is not in play state.`);
+              const reason = `Dropping client packet ${packetData.name} because the server connection is not in play state.`;
+              if (isChatPacket) {
+                this._logger.warn(`${reason} Player: ${this.username}; state: ${connection?.state ?? "disconnected"}.`);
+              } else {
+                this._logger.debug(reason);
+              }
             }
+          } else if (isChatPacket) {
+            this._logger.debug(`Chat packet from ${this.username} was canceled by a proxy listener.`);
           }
         } catch (err) {
           this._logger.debug(`Client ${this.username!} sent an unrecognized packet that could not be parsed!\n${err.stack ?? err}`);
@@ -338,6 +353,9 @@ export class Player extends EventEmitter {
               params: translated[1],
               cancel: false,
             };
+          if (eventData.name === "chat") {
+            this._logger.debug(`Received a backend chat packet for ${this.username}.`);
+          }
           this.emitVanillaPacket(eventData, "SERVER");
           if (!eventData.cancel) {
             this.ws.send(
@@ -346,6 +364,8 @@ export class Player extends EventEmitter {
                 params: eventData.params,
               })
             );
+          } else if (eventData.name === "chat") {
+            this._logger.debug(`Backend chat packet for ${this.username} was canceled by a proxy listener.`);
           }
         }
       });

@@ -59,7 +59,7 @@ export class Player extends EventEmitter {
       version: "1.8.9",
       customPackets: null,
     });
-    this.clientDeserializer = createSerializer({
+    this.clientDeserializer = createDeserializer({
       state: states.PLAY,
       isServer: true,
       version: "1.8.9",
@@ -102,14 +102,14 @@ export class Player extends EventEmitter {
               params: translated[1],
               cancel: false,
             };
-          this.emit("vanillaPacket", packetData, "CLIENT", this);
+          this.emitVanillaPacket(packetData, "CLIENT");
           if (!packetData.cancel) {
-            (this as any)._sendPacketToServer(
-              this.clientSerializer.createPacketBuffer({
-                name: packetData.name,
-                params: packetData.params,
-              })
-            );
+            const connection = this.serverConnection;
+            if (connection?.state === states.PLAY) {
+              connection.write(packetData.name, packetData.params);
+            } else {
+              this._logger.debug(`Dropping client packet ${packetData.name} because the server connection is not in play state.`);
+            }
           }
         } catch (err) {
           this._logger.debug(`Client ${this.username!} sent an unrecognized packet that could not be parsed!\n${err.stack ?? err}`);
@@ -120,6 +120,19 @@ export class Player extends EventEmitter {
 
   public write(packet: Packet) {
     this.ws.send(packet.serialize());
+  }
+
+  private emitVanillaPacket(
+    packetData: { name: string; params: any; cancel: boolean },
+    origin: "CLIENT" | "SERVER"
+  ) {
+    try {
+      this.emit("vanillaPacket", packetData, origin, this);
+    } catch (err) {
+      this._logger.warn(
+        `A ${origin.toLowerCase()} packet listener failed for ${packetData.name}; forwarding will continue. ${err.stack ?? err}`
+      );
+    }
   }
 
   public async read(packetId?: Enums.PacketId, filter?: (packet: Packet) => boolean): Promise<Packet> {
@@ -239,12 +252,7 @@ export class Player extends EventEmitter {
     return new Promise((res, rej) => {
       let stream = false,
         uuid;
-      const listener = (msg) => {
-          if (stream) {
-            client.writeRaw(msg);
-          }
-        },
-        errListener = (err) => {
+      const errListener = (err) => {
           if (!stream) {
             rej(err);
           } else {
@@ -263,7 +271,6 @@ export class Player extends EventEmitter {
         if (!this._switchingServers && !switchingServers) {
           this.disconnect(this._kickMessage ?? reason);
         }
-        this.ws.removeListener("message", listener);
       });
       client.once("connect", () => {
         this.emit("joinServer", client, this);
@@ -331,7 +338,7 @@ export class Player extends EventEmitter {
               params: translated[1],
               cancel: false,
             };
-          this.emit("vanillaPacket", eventData, "SERVER", this);
+          this.emitVanillaPacket(eventData, "SERVER");
           if (!eventData.cancel) {
             this.ws.send(
               this.serverSerializer.createPacketBuffer({
@@ -342,7 +349,6 @@ export class Player extends EventEmitter {
           }
         }
       });
-      (this as any)._sendPacketToServer = listener;
     });
   }
 }

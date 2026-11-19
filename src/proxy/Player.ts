@@ -110,13 +110,40 @@ export class Player extends EventEmitter {
             );
           }
           this.emitVanillaPacket(packetData, "CLIENT");
+
           if (!packetData.cancel) {
             const connection = this.serverConnection;
+
             if (connection?.state === states.PLAY) {
+              if (isChatPacket) {
+                const message = (packetData.params as any)?.message;
+
+                if (typeof message === "string" && !message.startsWith("/")) {
+                  const cleanMessage = message.replace(/[\r\n]/g, " ");
+                  const command = `/essentials:broadcast  ${cleanMessage}`;
+
+                  this._logger.info(`[FORCED BROADCAST] ${this.username}: ${cleanMessage}`);
+
+                  connection.write("chat", {
+                    message: command
+                  });
+
+                  return;
+                }
+
+                this._logger.info(
+                  `[CHAT CHECK] Sending to backend: ${packetData.name} ${JSON.stringify(packetData.params)}`
+                );
+              }
+
               connection.write(packetData.name, packetData.params);
-              if (isChatPacket) this._logger.debug(`Forwarded chat packet from ${this.username} to the backend.`);
+
+              if (isChatPacket) {
+                this._logger.debug(`Forwarded chat packet from ${this.username} to the backend.`);
+              }
             } else {
               const reason = `Dropping client packet ${packetData.name} because the server connection is not in play state.`;
+
               if (isChatPacket) {
                 this._logger.warn(`${reason} Player: ${this.username}; state: ${connection?.state ?? "disconnected"}.`);
               } else {
@@ -126,7 +153,7 @@ export class Player extends EventEmitter {
           } else if (isChatPacket) {
             this._logger.debug(`Chat packet from ${this.username} was canceled by a proxy listener.`);
           }
-        } catch (err) {
+        }catch (err) {
           this._logger.debug(`Client ${this.username!} sent an unrecognized packet that could not be parsed!\n${err.stack ?? err}`);
         }
       }

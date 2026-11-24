@@ -7,7 +7,7 @@ import { Client } from "minecraft-protocol";
 import { ClientState, ConnectionState } from "./types.js";
 import { auth, ServerDeviceCodeResponse } from "./auth.js";
 import { config } from "./config.js";
-import { handleCommand } from "./commands.js";
+import { registerCommandChatListener } from "./commands.js";
 import { getTokenProfileTheAltening } from "./auth_thealtening.js";
 import { resolve4, resolveSrv } from "dns/promises";
 
@@ -638,12 +638,7 @@ export async function onConnect(client: ClientState, metadata?: { ip: string; po
         });
         logger.info(`Player ${client.gameClient.username} is attempting to connect to ${host}:${port} under their Minecraft account's username (${savedAuth.selectedProfile.name}) using online mode!`);
         const player = PLUGIN_MANAGER.proxy.players.get(client.gameClient.username);
-        player.on("vanillaPacket", (packet, origin) => {
-          if (origin == "CLIENT" && packet.name == "chat" && (packet.params.message as string).toLowerCase().startsWith("/eag-") && !packet.cancel) {
-            packet.cancel = true;
-            handleCommand(player, packet.params.message as string);
-          }
-        });
+        registerCommandChatListener(player);
 
         (player as any)._onlineSession = session;
 
@@ -881,12 +876,7 @@ export async function onConnect(client: ClientState, metadata?: { ip: string; po
         });
         logger.info(`Player ${client.gameClient.username} is attempting to connect to ${host}:${port} under their TheAltening alt token's username (${appendOptions.username}) using TheAltening mode!`);
         const player = PLUGIN_MANAGER.proxy.players.get(client.gameClient.username);
-        player.on("vanillaPacket", (packet, origin) => {
-          if (origin == "CLIENT" && packet.name == "chat" && (packet.params.message as string).toLowerCase().startsWith("/eag-") && !packet.cancel) {
-            packet.cancel = true;
-            handleCommand(player, packet.params.message as string);
-          }
-        });
+        registerCommandChatListener(player);
         (player as any)._onlineSession = {
           ...appendOptions,
           isTheAltening: true,
@@ -968,12 +958,7 @@ export async function onConnect(client: ClientState, metadata?: { ip: string; po
         });
         logger.info(`Player ${client.gameClient.username} is attempting to connect to ${host}:${port} under their Eaglercraft username (${client.gameClient.username}) using offline mode!`);
         const player = PLUGIN_MANAGER.proxy.players.get(client.gameClient.username);
-        player.on("vanillaPacket", (packet, origin) => {
-          if (origin == "CLIENT" && packet.name == "chat" && (packet.params.message as string).toLowerCase().startsWith("/eag-") && !packet.cancel) {
-            packet.cancel = true;
-            handleCommand(player, packet.params.message as string);
-          }
-        });
+        registerCommandChatListener(player);
 
         await player.switchServers({
           host: host,

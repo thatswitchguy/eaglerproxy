@@ -59,7 +59,7 @@ export class Player extends EventEmitter {
       version: "1.8.9",
       customPackets: null,
     });
-    this.clientDeserializer = createSerializer({
+    this.clientDeserializer = createDeserializer({
       state: states.PLAY,
       isServer: true,
       version: "1.8.9",
@@ -102,16 +102,58 @@ export class Player extends EventEmitter {
               params: translated[1],
               cancel: false,
             };
-          this.emit("vanillaPacket", packetData, "CLIENT", this);
-          if (!packetData.cancel) {
-            (this as any)._sendPacketToServer(
-              this.clientSerializer.createPacketBuffer({
-                name: packetData.name,
-                params: packetData.params,
-              })
+          const isChatPacket = packetData.name === "chat";
+          if (isChatPacket) {
+            const message = (packetData.params as any)?.message;
+            this._logger.debug(
+              `Received chat packet from ${this.username} (${typeof message === "string" ? message.length : "unknown"} characters).`
             );
           }
-        } catch (err) {
+          this.emitVanillaPacket(packetData, "CLIENT");
+
+          if (!packetData.cancel) {
+            const connection = this.serverConnection;
+
+            if (connection?.state === states.PLAY) {
+              if (isChatPacket) {
+                const message = (packetData.params as any)?.message;
+
+                if (typeof message === "string" && !message.startsWith("/")) {
+                  const cleanMessage = message.replace(/[\r\n]/g, " ");
+                  const command = `/essentials:broadcast  ${cleanMessage}`;
+
+                  this._logger.info(`[FORCED BROADCAST] ${this.username}: ${cleanMessage}`);
+
+                  connection.write("chat", {
+                    message: command
+                  });
+
+                  return;
+                }
+
+                this._logger.info(
+                  `[CHAT CHECK] Sending to backend: ${packetData.name} ${JSON.stringify(packetData.params)}`
+                );
+              }
+
+              connection.write(packetData.name, packetData.params);
+
+              if (isChatPacket) {
+                this._logger.debug(`Forwarded chat packet from ${this.username} to the backend.`);
+              }
+            } else {
+              const reason = `Dropping client packet ${packetData.name} because the server connection is not in play state.`;
+
+              if (isChatPacket) {
+                this._logger.warn(`${reason} Player: ${this.username}; state: ${connection?.state ?? "disconnected"}.`);
+              } else {
+                this._logger.debug(reason);
+              }
+            }
+          } else if (isChatPacket) {
+            this._logger.debug(`Chat packet from ${this.username} was canceled by a proxy listener.`);
+          }
+        }catch (err) {
           this._logger.debug(`Client ${this.username!} sent an unrecognized packet that could not be parsed!\n${err.stack ?? err}`);
         }
       }
@@ -120,6 +162,19 @@ export class Player extends EventEmitter {
 
   public write(packet: Packet) {
     this.ws.send(packet.serialize());
+  }
+
+  private emitVanillaPacket(
+    packetData: { name: string; params: any; cancel: boolean },
+    origin: "CLIENT" | "SERVER"
+  ) {
+    try {
+      this.emit("vanillaPacket", packetData, origin, this);
+    } catch (err) {
+      this._logger.warn(
+        `A ${origin.toLowerCase()} packet listener failed for ${packetData.name}; forwarding will continue. ${err.stack ?? err}`
+      );
+    }
   }
 
   public async read(packetId?: Enums.PacketId, filter?: (packet: Packet) => boolean): Promise<Packet> {
@@ -239,12 +294,7 @@ export class Player extends EventEmitter {
     return new Promise((res, rej) => {
       let stream = false,
         uuid;
-      const listener = (msg) => {
-          if (stream) {
-            client.writeRaw(msg);
-          }
-        },
-        errListener = (err) => {
+      const errListener = (err) => {
           if (!stream) {
             rej(err);
           } else {
@@ -263,7 +313,6 @@ export class Player extends EventEmitter {
         if (!this._switchingServers && !switchingServers) {
           this.disconnect(this._kickMessage ?? reason);
         }
-        this.ws.removeListener("message", listener);
       });
       client.once("connect", () => {
         this.emit("joinServer", client, this);
@@ -331,7 +380,10 @@ export class Player extends EventEmitter {
               params: translated[1],
               cancel: false,
             };
-          this.emit("vanillaPacket", eventData, "SERVER", this);
+          if (eventData.name === "chat") {
+            this._logger.debug(`Received a backend chat packet for ${this.username}.`);
+          }
+          this.emitVanillaPacket(eventData, "SERVER");
           if (!eventData.cancel) {
             this.ws.send(
               this.serverSerializer.createPacketBuffer({
@@ -339,10 +391,11 @@ export class Player extends EventEmitter {
                 params: eventData.params,
               })
             );
+          } else if (eventData.name === "chat") {
+            this._logger.debug(`Backend chat packet for ${this.username} was canceled by a proxy listener.`);
           }
         }
       });
-      (this as any)._sendPacketToServer = listener;
     });
   }
 }

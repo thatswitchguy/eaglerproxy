@@ -56,18 +56,6 @@ export function handleCommand(sender: Player, cmd: string): void {
   }
 }
 
-export function registerCommandChatListener(player: Player) {
-  player.on("vanillaPacket", (packet, origin) => {
-    if (origin !== "CLIENT" || packet.name !== "chat" || packet.cancel) return;
-
-    const message = packet.params?.message;
-    if (typeof message !== "string" || !message.toLowerCase().startsWith("/eag-")) return;
-
-    packet.cancel = true;
-    handleCommand(player, message);
-  });
-}
-
 export function helpCommand(sender: Player) {
   sendPluginChatMessage(sender, {
     text: SEPARATOR,

@@ -2,8 +2,8 @@ export const config = {
   bindInternalServerPort: 25569,
   bindInternalServerIp: "127.0.0.1",
   defaultServer: {
-    host: "sigmacraft.mcsh.gg",
-    port: 17320,
+    host: "sigmacraft4.aternos.me",
+    port: 35228,
   },
   defaultAuthType: "OFFLINE",
   allowCustomPorts: true,
